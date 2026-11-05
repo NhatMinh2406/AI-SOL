@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Chia sẻ vị trí để tìm HEAD gần bạn</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fa; color: #17202a; }
+    main { width: min(92vw, 440px); box-sizing: border-box; padding: 28px; border-radius: 18px; background: white; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+    h1 { font-size: 23px; margin: 0 0 12px; }
+    p { line-height: 1.55; color: #4b5563; }
+    button { width: 100%; border: 0; border-radius: 12px; padding: 15px 18px; font-size: 16px; font-weight: 700; cursor: pointer; background: #1769e0; color: white; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { margin-top: 16px; min-height: 44px; font-size: 14px; white-space: pre-wrap; }
+    .privacy { padding: 12px; border-radius: 10px; background: #f2f6fb; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Chia sẻ vị trí để tìm HEAD gần bạn</h1>
+    <p>Nhấn nút bên dưới và chọn <b>Cho phép</b> khi trình duyệt hỏi quyền truy cập vị trí.</p>
+    <div class="privacy">
+      Vị trí chỉ được gửi sau khi bạn chủ động nhấn nút và cấp quyền. Hệ thống dùng tọa độ một lần để tính các HEAD gần bạn, không theo dõi vị trí liên tục.
+    </div>
+    <p><button id="shareButton" type="button">Lấy vị trí hiện tại</button></p>
+    <div id="status" role="status" aria-live="polite"></div>
+  </main>
+
+  <script>
+    // THAY URL NÀY bằng Production URL của Webhook nhận tọa độ trong n8n.
+    const N8N_WEBHOOK_URL = "https://n8n.n2nai.io/webhook/receive-customer-location";
+
+    const button = document.getElementById("shareButton");
+    const statusBox = document.getElementById("status");
+    const requestId = new URLSearchParams(window.location.search).get("request_id");
+
+    function showStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    button.addEventListener("click", () => {
+      if (!requestId) {
+        showStatus("Link không có mã yêu cầu. Hãy quay lại Zalo Bot và yêu cầu bot gửi một liên kết mới.");
+        return;
+      }
+
+      if (!window.isSecureContext) {
+        showStatus("Trang cần được mở bằng HTTPS để trình duyệt cho phép lấy vị trí.");
+        return;
+      }
+
+      if (!navigator.geolocation) {
+        showStatus("Trình duyệt này không hỗ trợ lấy vị trí. Hãy mở link bằng Chrome hoặc Safari.");
+        return;
+      }
+
+      button.disabled = true;
+      showStatus("Đang xin quyền truy cập vị trí…");
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const fields = {
+            request_id: requestId,
+            latitude: String(position.coords.latitude),
+            longitude: String(position.coords.longitude),
+            accuracy_m: String(position.coords.accuracy)
+          };
+
+          // Dùng HTML form POST để tránh yêu cầu CORS preflight từ fetch JSON.
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = N8N_WEBHOOK_URL;
+          form.enctype = "application/x-www-form-urlencoded";
+          form.style.display = "none";
+
+          for (const [name, value] of Object.entries(fields)) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+          }
+
+          document.body.appendChild(form);
+          showStatus("Đã lấy được tọa độ. Đang gửi về hệ thống để tìm HEAD gần bạn…");
+          form.submit();
+        },
+        (error) => {
+          button.disabled = false;
+          const messages = {
+            1: "Bạn chưa cấp quyền vị trí. Hãy cho phép truy cập vị trí trong trình duyệt rồi thử lại.",
+            2: "Thiết bị chưa xác định được vị trí. Hãy bật Dịch vụ vị trí/GPS và thử lại.",
+            3: "Lấy vị trí quá thời gian chờ. Hãy thử lại ở nơi có tín hiệu tốt hơn."
+          };
+          showStatus(messages[error.code] || "Không lấy được vị trí. Vui lòng thử lại.");
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      );
+    });
+  </script>
+</body>
+</html>
